@@ -3,6 +3,13 @@
 from langchain.tools import tool
 from typing import Literal
 
+# Import FileSystem tools (FR-FS-01, FR-FS-02, FR-FS-03, FR-FS-04)
+try:
+    from .filesystem_tools import get_filesystem_tools
+    FILESYSTEM_TOOLS_AVAILABLE = True
+except ImportError:
+    FILESYSTEM_TOOLS_AVAILABLE = False
+
 
 @tool
 def generate_code(
@@ -42,6 +49,19 @@ def explain_code(
     return f"Tool called: explain_code with {detail_level} detail"
 
 
-def get_tools():
-    """Get all available tools."""
-    return [generate_code, explain_code]
+def get_tools(include_filesystem: bool = True):
+    """Get all available tools.
+    
+    Args:
+        include_filesystem: Whether to include file system tools (default: True)
+        
+    Returns:
+        List of all available LangChain tools
+    """
+    tools = [generate_code, explain_code]
+    
+    # Add file system tools if available (FR-FS)
+    if include_filesystem and FILESYSTEM_TOOLS_AVAILABLE:
+        tools.extend(get_filesystem_tools())
+    
+    return tools
