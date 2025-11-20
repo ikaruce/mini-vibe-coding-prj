@@ -28,6 +28,13 @@ try:
 except ImportError:
     HEALING_AVAILABLE = False
 
+# Import document synchronization
+try:
+    from .doc_sync import DocumentSynchronizer, DocumentSyncResult, DocumentType
+    DOC_SYNC_AVAILABLE = True
+except ImportError:
+    DOC_SYNC_AVAILABLE = False
+
 
 class AgentState(TypedDict):
     """State for the agent with SPEED/PRECISION mode support.
@@ -64,6 +71,9 @@ class AgentState(TypedDict):
     
     # Healing result
     healing_result: Optional[dict]
+    
+    # Document synchronization (FR-DS-01)
+    doc_sync_result: Optional[dict]
 
 
 def create_llm():
@@ -368,19 +378,75 @@ def check_test_result(state: AgentState) -> str:
     test_results = state.get("test_results", {})
     retry_count = state.get("retry_count", 0)
     
-    # Tests passed
+    # Tests passed - proceed to doc sync
     if test_results.get("success"):
         print("✅ All tests passed!")
-        return "success"
+        return "doc_sync"
     
-    # Max retries exceeded
+    # Max retries exceeded - still do doc sync
     if retry_count >= 3:
         print("❌ Max retries exceeded (3/3)")
-        return "failure"
+        print("📝 Proceeding to documentation sync anyway...")
+        return "doc_sync"
     
     # Need healing
     print(f"⚠️ Tests failed, attempting self-healing...")
     return "heal"
+
+
+# Document Synchronization Node (FR-DS-01)
+
+def doc_sync_node(state: AgentState) -> dict:
+    """FR-DS-01: Analyze and propose documentation updates.
+    
+    Input:
+        - generated_code: New/modified code
+        - impacted_files: Files that changed
+        
+    Output:
+        - doc_sync_result: Proposed documentation changes
+    """
+    if not DOC_SYNC_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Doc sync module not available"]
+        }
+    
+    print("📝 Analyzing documentation synchronization...")
+    
+    llm = create_llm()
+    synchronizer = DocumentSynchronizer(llm)
+    
+    result = synchronizer.analyze_and_propose(
+        code=state.get("generated_code", ""),
+        changed_files=state.get("impacted_files", [])
+    )
+    
+    # Log results
+    if result.changes_detected:
+        print(f"📋 Found {len(result.proposed_changes)} documentation updates")
+        for change in result.proposed_changes:
+            print(f"   - {change.doc_type.value}: {change.location}")
+    else:
+        print("✅ Documentation is up to date")
+    
+    return {
+        "doc_sync_result": {
+            "changes_detected": result.changes_detected,
+            "proposed_changes": [
+                {
+                    "type": change.doc_type.value,
+                    "file": change.file_path,
+                    "location": change.location,
+                    "current": change.current_content[:200],  # Truncate for state
+                    "proposed": change.proposed_content[:500],  # Truncate for state
+                    "reason": change.reason,
+                    "confidence": change.confidence
+                }
+                for change in result.proposed_changes
+            ],
+            "summary": result.analysis_summary
+        }
+    }
 
 
 # Graph Construction
@@ -494,6 +560,7 @@ def create_self_healing_agent(enable_tracing: bool = True):
     workflow.add_node("test_generation", test_generation_node)
     workflow.add_node("execute_tests", execute_tests_node)
     workflow.add_node("self_healing", self_healing_node)
+    workflow.add_node("doc_sync", doc_sync_node)  # FR-DS-01
     
     # Entry point: mode-based routing
     workflow.set_conditional_entry_point(
@@ -529,11 +596,13 @@ def create_self_healing_agent(enable_tracing: bool = True):
         "execute_tests",
         check_test_result,
         {
-            "success": END,
-            "failure": END,
+            "doc_sync": "doc_sync",  # Success or Max Retries → Document Sync
             "heal": "self_healing"
         }
     )
+    
+    # After doc sync, end
+    workflow.add_edge("doc_sync", END)
     
     # After healing, execute tests again
     workflow.add_edge("self_healing", "execute_tests")
