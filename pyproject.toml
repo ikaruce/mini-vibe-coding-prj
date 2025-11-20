@@ -18,6 +18,10 @@ dependencies = [
     "pydantic>=2.0.0",
     # Tracing and monitoring
     "langsmith>=0.1.0",
+    # Console output
+    "rich>=13.0.0",
+    # Docker for sandboxed execution
+    "docker>=7.0.0",
     # Analysis dependencies
     "tree-sitter>=0.21.0",
     "tree-sitter-python>=0.21.0",

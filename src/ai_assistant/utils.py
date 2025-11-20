@@ -2,11 +2,14 @@
 
 from typing import Optional
 import logging
+import sys
 
-# Configure logging
+# Configure logging to output to stdout
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout,  # Output to stdout instead of stderr
+    force=True  # Override any existing configuration
 )
 
 logger = logging.getLogger(__name__)

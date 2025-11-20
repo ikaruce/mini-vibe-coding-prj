@@ -18,6 +18,16 @@ try:
 except ImportError:
     ANALYZERS_AVAILABLE = False
 
+# Import healing modules
+try:
+    from .healing import (
+        CodeGenerator, TestGenerator, SelfHealer,
+        TestResult, HealingResult
+    )
+    HEALING_AVAILABLE = True
+except ImportError:
+    HEALING_AVAILABLE = False
+
 
 class AgentState(TypedDict):
     """State for the agent with SPEED/PRECISION mode support.
@@ -44,8 +54,16 @@ class AgentState(TypedDict):
     retry_count: int
     error_logs: List[str]
     
+    # Code generation (FR-AC-01)
+    generated_code: Optional[str]
+    generated_tests: Optional[str]
+    test_results: Optional[dict]
+    
     # Analysis metadata
     analysis_result: Optional[dict]
+    
+    # Healing result
+    healing_result: Optional[dict]
 
 
 def create_llm():
@@ -239,6 +257,132 @@ def should_continue(state: AgentState) -> str:
     return "continue"
 
 
+# Self-Healing Nodes (FR-AC-01, FR-AC-02, FR-AC-03)
+
+def code_generation_node(state: AgentState) -> dict:
+    """FR-AC-01: Generate code based on user request and impacted files."""
+    if not HEALING_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Healing module not available"]
+        }
+    
+    print("💻 Generating code...")
+    
+    llm = create_llm()
+    generator = CodeGenerator(llm)
+    
+    # Get user request from messages
+    user_request = state["messages"][-1].content if state.get("messages") else "Generate code"
+    impacted_files = state.get("impacted_files", [])
+    
+    code = generator.generate(
+        request=user_request,
+        impacted_files=impacted_files,
+        context=state.get("context")
+    )
+    
+    return {"generated_code": code}
+
+
+def test_generation_node(state: AgentState) -> dict:
+    """FR-AC-03: Generate pytest tests for generated code."""
+    if not HEALING_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Healing module not available"]
+        }
+    
+    print("🧪 Generating tests...")
+    
+    llm = create_llm()
+    test_gen = TestGenerator(llm)
+    
+    code = state.get("generated_code", "")
+    user_request = state["messages"][-1].content if state.get("messages") else ""
+    
+    tests = test_gen.generate(code=code, request=user_request)
+    
+    return {"generated_tests": tests}
+
+
+def execute_tests_node(state: AgentState) -> dict:
+    """Execute tests and collect results."""
+    if not HEALING_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Healing module not available"]
+        }
+    
+    print("🔬 Executing tests...")
+    
+    from .healing import TestExecutor
+    
+    executor = TestExecutor()
+    result = executor.execute(
+        code=state.get("generated_code", ""),
+        tests=state.get("generated_tests", "")
+    )
+    
+    return {
+        "test_results": {
+            "success": result.success,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "errors": result.errors,
+            "returncode": result.returncode
+        }
+    }
+
+
+def self_healing_node(state: AgentState) -> dict:
+    """FR-AC-02: Self-healing loop to fix code errors."""
+    if not HEALING_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Healing module not available"]
+        }
+    
+    print(f"🔧 Self-healing attempt {state.get('retry_count', 0) + 1}/3...")
+    
+    llm = create_llm()
+    healer = SelfHealer(llm, max_retries=3)
+    
+    # Perform healing
+    result = healer.heal(
+        code=state.get("generated_code", ""),
+        tests=state.get("generated_tests", ""),
+        original_request=state["messages"][-1].content if state.get("messages") else ""
+    )
+    
+    return {
+        "generated_code": result.final_code,
+        "retry_count": result.retry_count,
+        "error_logs": state.get("error_logs", []) + result.error_logs,
+        "healing_result": {
+            "success": result.success,
+            "retry_count": result.retry_count,
+            "error_logs": result.error_logs
+        }
+    }
+
+
+def check_test_result(state: AgentState) -> str:
+    """Check if tests passed or need healing."""
+    test_results = state.get("test_results", {})
+    retry_count = state.get("retry_count", 0)
+    
+    # Tests passed
+    if test_results.get("success"):
+        print("✅ All tests passed!")
+        return "success"
+    
+    # Max retries exceeded
+    if retry_count >= 3:
+        print("❌ Max retries exceeded (3/3)")
+        return "failure"
+    
+    # Need healing
+    print(f"⚠️ Tests failed, attempting self-healing...")
+    return "heal"
+
+
 # Graph Construction
 
 def create_agent(enable_tracing: bool = True):
@@ -318,6 +462,82 @@ def create_agent(enable_tracing: bool = True):
     workflow.add_edge("tools", "agent")
     
     # Compile the graph
+    return workflow.compile()
+
+
+def create_self_healing_agent(enable_tracing: bool = True):
+    """Create agent with Self-Healing capabilities (FR-AC-01, FR-AC-02, FR-AC-03).
+    
+    Graph structure:
+        START → Mode Analysis → Code Generation → Test Generation
+        → Execute Tests → Check Results
+        → [Pass: END] or [Fail: Self-Healing → Execute Tests again]
+        → Max 3 retries
+    
+    Args:
+        enable_tracing: Whether to enable LangSmith tracing
+        
+    Returns:
+        Compiled LangGraph workflow
+    """
+    # Setup LangSmith tracing if enabled
+    if enable_tracing:
+        config = get_config()
+        setup_langsmith_tracing(config)
+    
+    workflow = StateGraph(AgentState)
+    
+    # Add all nodes
+    workflow.add_node("speed_analysis", speed_analysis_node)
+    workflow.add_node("precision_analysis", precision_analysis_node)
+    workflow.add_node("code_generation", code_generation_node)
+    workflow.add_node("test_generation", test_generation_node)
+    workflow.add_node("execute_tests", execute_tests_node)
+    workflow.add_node("self_healing", self_healing_node)
+    
+    # Entry point: mode-based routing
+    workflow.set_conditional_entry_point(
+        route_by_mode,
+        {
+            "speed_analysis": "speed_analysis",
+            "precision_analysis": "precision_analysis"
+        }
+    )
+    
+    # After analysis, go to code generation
+    workflow.add_edge("speed_analysis", "code_generation")
+    
+    # PRECISION may fallback to SPEED
+    workflow.add_conditional_edges(
+        "precision_analysis",
+        check_precision_fallback,
+        {
+            "fallback_to_speed": "speed_analysis",
+            "code_agent": "code_generation",
+            "end": END
+        }
+    )
+    
+    # Code generation → Test generation
+    workflow.add_edge("code_generation", "test_generation")
+    
+    # Test generation → Execute tests
+    workflow.add_edge("test_generation", "execute_tests")
+    
+    # After tests, check results
+    workflow.add_conditional_edges(
+        "execute_tests",
+        check_test_result,
+        {
+            "success": END,
+            "failure": END,
+            "heal": "self_healing"
+        }
+    )
+    
+    # After healing, execute tests again
+    workflow.add_edge("self_healing", "execute_tests")
+    
     return workflow.compile()
 
 

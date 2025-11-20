@@ -13,6 +13,9 @@ import logging
 from dataclasses import dataclass, field
 import time
 
+# Import centralized logging setup
+from . import utils
+
 # Tree-sitter and NetworkX for SPEED mode
 try:
     import tree_sitter_python as tspython

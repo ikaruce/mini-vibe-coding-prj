@@ -30,6 +30,7 @@ LangChain과 LangGraph를 활용한 AI 코딩 어시스턴트입니다. OpenRout
 - Python 3.11 이상
 - UV 패키지 매니저
 - OpenRouter API 키
+- **Docker Desktop** (Self-Healing 기능 사용 시)
 
 ### 2. UV 설치 (Windows PowerShell)
 
@@ -56,7 +57,25 @@ uv pip install -e .
 uv pip install -e ".[dev]"
 ```
 
-### 4. 환경 변수 설정
+### 4. Docker 설정 (Self-Healing 기능용)
+
+Self-Healing 기능은 생성된 코드를 **Docker 컨테이너**에서 안전하게 실행합니다.
+
+```powershell
+# Docker 이미지 빌드
+cd docker/test-runner
+docker build -t ai-assistant-test-runner .
+cd ../..
+
+# 이미지 확인
+docker images ai-assistant-test-runner
+```
+
+**Docker 실행 확인:**
+- Docker Desktop이 실행 중이어야 합니다
+- `docker --version` 명령으로 확인
+
+### 5. 환경 변수 설정
 
 ```powershell
 # .env.example을 .env로 복사
@@ -210,6 +229,38 @@ ruff check src/ tests/
 
 # 타입 체크
 mypy src/
+```
+
+## 🐳 Docker 기반 샌드박스 실행
+
+Self-Healing 기능은 생성된 코드를 Docker 컨테이너에서 실행합니다.
+
+### 보안 기능
+- ✅ **완전 격리**: 호스트 시스템과 완전 분리
+- ✅ **네트워크 차단**: `network_mode="none"`
+- ✅ **메모리 제한**: 512MB 제한
+- ✅ **읽기 전용**: 파일 시스템 읽기 전용
+- ✅ **자동 정리**: 실행 후 즉시 삭제
+
+### 빠른 시작
+
+```powershell
+# 1. Docker 이미지 빌드 (최초 1회만)
+cd docker/test-runner
+docker build -t ai-assistant-test-runner .
+
+# 2. Self-Healing 데모 실행
+python examples/self_healing_demo.py
+```
+
+### 작동 방식
+
+```
+코드 생성 → Docker 컨테이너 생성
+           → 파일 마운트 (읽기 전용)
+           → pytest 실행 (격리 환경)
+           → 결과 수집
+           → 컨테이너 자동 삭제
 ```
 
 ##📊 LangSmith로 LangGraph 추적하기
