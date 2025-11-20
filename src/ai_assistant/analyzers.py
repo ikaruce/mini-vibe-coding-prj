@@ -92,10 +92,8 @@ class SpeedAnalyzer:
                 "Install with: uv pip install tree-sitter tree-sitter-python"
             )
         
-        # Initialize Tree-sitter parser
-        self.parser = Parser()
-        PY_LANGUAGE = Language(tspython.language())
-        self.parser.set_language(PY_LANGUAGE)
+        # Initialize Tree-sitter parser with Python language
+        self.parser = Parser(Language(tspython.language()))
         logger.info("SPEED analyzer initialized")
     
     def analyze(
