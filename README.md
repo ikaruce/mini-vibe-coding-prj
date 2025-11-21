@@ -32,13 +32,29 @@ LangChain과 LangGraph를 활용한 AI 코딩 어시스턴트입니다. OpenRout
 - OpenRouter API 키
 - **Docker Desktop** (Self-Healing 기능 사용 시)
 
-### 2. UV 설치 (Windows PowerShell)
+### 2. 빠른 실행 (CLI)
+
+```powershell
+# 대화형 모드 (기본)
+python run_agent.py
+
+# DeepAgent 모드 (Planning-driven)
+python run_agent.py --mode deep
+
+# Self-Healing 모드 (자동 수정)
+python run_agent.py --mode healing
+
+# 한 번만 실행
+python run_agent.py --once "List all Python files in src"
+```
+
+### 3. UV 설치 (Windows PowerShell)
 
 ```powershell
 irm https://astral.sh/uv/install.ps1 | iex
 ```
 
-### 3. 프로젝트 설정
+### 4. 프로젝트 설정
 
 ```powershell
 # 저장소 클론 (또는 디렉토리로 이동)
@@ -57,7 +73,7 @@ uv pip install -e .
 uv pip install -e ".[dev]"
 ```
 
-### 4. Docker 설정 (Self-Healing 기능용)
+### 5. Docker 설정 (Self-Healing 기능용)
 
 Self-Healing 기능은 생성된 코드를 **Docker 컨테이너**에서 안전하게 실행합니다.
 
@@ -75,7 +91,7 @@ docker images ai-assistant-test-runner
 - Docker Desktop이 실행 중이어야 합니다
 - `docker --version` 명령으로 확인
 
-### 5. 환경 변수 설정
+### 6. 환경 변수 설정
 
 ```powershell
 # .env.example을 .env로 복사
