@@ -1,0 +1,1 @@
+{'impacted_files': [''], 'mode_used': 'SPEED', 'analysis_time': 0.386763334274292, 'error': None}

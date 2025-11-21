@@ -264,13 +264,25 @@ class TestExecutor:
                 
                 logger.info("Docker execution completed")
                 
+                # Log full output for debugging
+                logger.info("=" * 70)
+                logger.info("Docker Container Output:")
+                logger.info("-" * 70)
+                logger.info(output)
+                logger.info("=" * 70)
+                
                 # Check if tests passed
-                success = "passed" in output and "FAILED" not in output
+                # exit_code is a dict with 'StatusCode' key
+                actual_exit_code = exit_code.get('StatusCode', 1) if isinstance(exit_code, dict) else exit_code
+                success = actual_exit_code == 0
+                
                 errors = ErrorClassifier.extract_errors(output)
                 
+                logger.info(f"Exit code: {actual_exit_code}")
                 logger.info(f"Tests {'passed ✅' if success else 'failed ❌'}")
                 if not success:
                     logger.info(f"Errors detected: {len(errors)}")
+                    logger.info(f"Error details: {errors[:3]}")  # Show first 3 errors
                 
                 return TestResult(
                     success=success,
@@ -382,7 +394,9 @@ class SelfHealer:
         # Self-healing loop
         while retry_count < self.max_retries and not test_result.success:
             retry_count += 1
-            logger.info(f"Retry attempt {retry_count}/{self.max_retries}")
+            logger.info("=" * 70)
+            logger.info(f"🔄 RETRY ATTEMPT {retry_count}/{self.max_retries}")
+            logger.info("=" * 70)
             
             # Analyze errors
             error_types = []
@@ -391,9 +405,11 @@ class SelfHealer:
             
             error_summary = f"Attempt {retry_count}: {', '.join(set(error_types))}"
             error_logs.append(error_summary)
-            logger.info(f"Error analysis: {error_summary}")
+            logger.info(f"📊 Error analysis: {error_summary}")
+            logger.info(f"📝 Error message preview: {test_result.stderr[:200]}...")
             
             # Generate fix
+            logger.info("🤖 Asking LLM to fix the code...")
             current_code = self._generate_fix(
                 code=current_code,
                 tests=current_tests,
@@ -403,7 +419,11 @@ class SelfHealer:
                 attempt=retry_count
             )
             
-            # Execute tests again
+            logger.info(f"✅ LLM generated fix (code length: {len(current_code)} chars)")
+            logger.info(f"📝 Fixed code preview:\n{current_code[:200]}...")
+            
+            # Execute tests again with the fixed code
+            logger.info(f"🔬 Re-executing tests with attempt {retry_count} code...")
             test_result = self.executor.execute(current_code, current_tests)
             
             # Record history

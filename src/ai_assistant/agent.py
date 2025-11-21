@@ -35,6 +35,13 @@ try:
 except ImportError:
     DOC_SYNC_AVAILABLE = False
 
+# Import planning for DeepAgents
+try:
+    from .planner import Planner, Plan, Step, get_next_step, mark_step_complete
+    PLANNER_AVAILABLE = True
+except ImportError:
+    PLANNER_AVAILABLE = False
+
 
 class AgentState(TypedDict):
     """State for the agent with SPEED/PRECISION mode support.
@@ -74,6 +81,11 @@ class AgentState(TypedDict):
     
     # Document synchronization (FR-DS-01)
     doc_sync_result: Optional[dict]
+    
+    # DeepAgents Planning
+    plan: Optional[dict]  # Execution plan
+    current_step_index: int
+    planning_complete: bool
 
 
 def create_llm():
@@ -446,6 +458,62 @@ def doc_sync_node(state: AgentState) -> dict:
             ],
             "summary": result.analysis_summary
         }
+    }
+
+
+# Planning Node (DeepAgents)
+
+def planning_node(state: AgentState) -> dict:
+    """DeepAgents Planning: Create step-by-step execution plan.
+    
+    Input:
+        - messages: User request
+        
+    Output:
+        - plan: Structured execution plan
+        - planning_complete: True
+    """
+    if not PLANNER_AVAILABLE:
+        return {
+            "error_logs": state.get("error_logs", []) + ["Planner module not available"],
+            "planning_complete": False
+        }
+    
+    print("🗺️  Creating execution plan...")
+    
+    llm = create_llm()
+    planner = Planner(llm)
+    
+    user_request = state["messages"][-1].content if state.get("messages") else ""
+    context = state.get("context", "")
+    
+    plan_result = planner.create_plan(user_request, context)
+    
+    # Log the plan
+    print(f"\n📋 Execution Plan ({plan_result.total_steps} steps):")
+    print("=" * 70)
+    for step in plan_result.steps:
+        print(f"  Step {step.id}: [{step.subagent}] {step.description[:60]}...")
+    print("=" * 70)
+    print(f"Estimated time: {plan_result.estimated_time:.1f}s\n")
+    
+    return {
+        "plan": {
+            "steps": [
+                {
+                    "id": s.id,
+                    "action": s.action,
+                    "description": s.description,
+                    "subagent": s.subagent,
+                    "status": s.status
+                }
+                for s in plan_result.steps
+            ],
+            "total_steps": plan_result.total_steps,
+            "estimated_time": plan_result.estimated_time
+        },
+        "current_step_index": 0,
+        "planning_complete": True
     }
 
 
